@@ -1,12 +1,10 @@
-let api_key = "50353ebb9d28d7d0fc38a31f07066e04";
-let base = "http://data.fixer.io/api";
-
-let is_bool = (val) => val === true || val === false;
+let API_KEY = "";
+let BASE_URI = "http://data.fixer.io/api";
 
 /* HTTP Client */
-function make_client({ base, api_key, timeout = 5000 } = {}) {
+function make_client({ base_uri, api_key, timeout = 5000 } = {}) {
   async function request(path, { method = "GET", query, accept = "application/json", ...custom_config }) {
-    let url = `${base + path}?access_key=${api_key}`;
+    let url = `${base_uri + path}?access_key=${api_key}`;
     if (query) url += "&" + new URLSearchParams(query);
     let controller = new AbortController();
     let timer_id = setTimeout(controller.abort, timeout);
@@ -35,6 +33,8 @@ function make_client({ base, api_key, timeout = 5000 } = {}) {
     if (!response.ok) {
       return Promise.reject(data);
     }
+
+    if (!data.success) return Promise.reject(data.error);
 
     return data;
   }
@@ -72,6 +72,8 @@ function reactive(initial) {
 }
 
 /* DOM */
+
+let is_bool = (val) => val === true || val === false;
 function create_node(tag, ...args) {
   let node = document.createElement(tag);
   for (let i = 0; i < args.length; i++) {
@@ -188,6 +190,7 @@ function Converter(where = document.body) {
   let [loading, setLoading] = reactive(false);
   let [symbols, setSymbols] = reactive();
   let [rates, setRates] = reactive();
+  let [error, setError] = reactive();
 
   let [source, setSource] = reactive({
     currency: "EUR",
@@ -215,18 +218,25 @@ function Converter(where = document.body) {
     get_supported_symbols().then((result) => setSymbols(result.symbols)),
     get_rates().then((result) => setRates(result.rates))
   ])
+  .catch(err => {
+    setError(err);
+  })
   .finally(() => {
     setLoading(false);
   });
 
   let component = div(
     { class: "converter" },
-    condition(symbols, () => p({ class: "converter__equals" }, text(() => `${round(parse_float(source().amount, 0))} ${symbols()[source().currency]} equals`)), span("Loading")),
-    condition(symbols, () => strong({ class: "converter__value" }, text(() => `${round(source(v => parse_float(v.amount, 0)) / source(v => v.rate) * target(v => v.rate))} ${symbols()[target().currency]}`))),
+    condition(() => !loading() && symbols(),
+              () => p({ class: "converter__equals" }, text(() => `${round(source().amount || 0)} ${symbols()?.[source().currency]} equals`)),
+              span(condition(error, () => span(text(() => error().info)), span("Loading")))),
+    condition(() => !loading() && rates(),
+              () => strong({ class: "converter__value" },
+              text(() => `${round(source(v => v.amount || 0) / source(v => v.rate) * target(v => v.rate))} ${symbols()?.[target().currency]}`))),
     div(
       { class: "input-container" },
       input(
-        { type: "text", inputmode: "decimal", name: "base_value", class: "input" },
+        { type: "text", inputmode: "decimal", name: "base_value", class: "input", disabled: () => loading() || !!error() },
         value(() => round(source(v => v.amount))),
         listeners({
           input: (e) => setSource((prev) => ({ ...prev, amount: parseFloat(e.target.value) }))
@@ -234,7 +244,7 @@ function Converter(where = document.body) {
       ),
       span({ class: "separator" }),
       select(
-        { name: "base_symbol", class: "select" },
+        { name: "base_symbol", class: "select", disabled: () => loading() || !!error() },
         listeners({
           change: (e) => setSource((prev) => ({ ...prev, currency: e.target.value, rate: rates()[e.target.value] }))
         }),
@@ -244,7 +254,7 @@ function Converter(where = document.body) {
     div(
       { class: "input-container" },
       input(
-        { type: "text", inputmode: "decimal", name: "base_value", class: "input" },
+        { type: "text", inputmode: "decimal", name: "base_value", class: "input", disabled: () => loading() || !!error() },
         value(() => round(source(v => v.amount) / source(v => v.rate) * target(v => v.rate))),
         listeners({
           input: (e) => setSource((prev) => ({ ...prev, amount: parseFloat(e.target.value) * source(v => v.rate) / target(v => v.rate) }))
@@ -252,7 +262,7 @@ function Converter(where = document.body) {
       ),
       span({ class: "separator" }),
       select(
-        { name: "base_symbol", class: "select" },
+        { name: "base_symbol", class: "select", disabled: () => loading() || !!error() },
         listeners({
           change: (e) => setTarget((prev) => ({ ...prev, currency: e.target.value, rate: rates()[e.target.value] }))
         }),
@@ -264,7 +274,7 @@ function Converter(where = document.body) {
   where.append(component);
 }
 
-let client = make_client({ base, api_key });
+let client = make_client({ base_uri: BASE_URI, api_key: API_KEY });
 
 async function get_supported_symbols() {
   return await client.get("/symbols");
