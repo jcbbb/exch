@@ -24,3 +24,6 @@ We have a few DOM helpers functions that leverage `effect`s to create reactive c
 1. Get your API key from [Fixer.io](https://fixer.io);
 2. Open `main.js` and set `API_KEY` variable to your api key;
 3. Just open `index.html` and see if it works;
+
+### Notes
+Ideally, you would split `main.js` into several files, but for the purposes of simplicity everything is kept in one file.
