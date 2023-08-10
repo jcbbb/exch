@@ -116,6 +116,16 @@ function attrs(attrs) {
   };
 }
 
+function value(content) {
+  return (node) => {
+    if (typeof content === "function") {
+      effect(() => {
+        node.value = content();
+      });
+    } else node.value = content;
+  };
+}
+
 function listeners(listeners) {
   return (node) => {
     for (let event in listeners) {
@@ -155,14 +165,24 @@ let condition = (cond, truthy, falsey) => (parent, pos) => {
   effect(() => {
     if (cond()) {
       if (falsey) falsey.remove();
-      return parent.insertBefore(truthy(), parent.childNodes[pos - 1]);
+      return parent.insertBefore(truthy(), parent.children[pos - 1]);
     } else if (falsey) {
-      return parent.insertBefore(falsey, parent.childNodes[pos - 1]);
+      return parent.insertBefore(falsey, parent.children[pos - 1]);
     }
   });
 
   return falsey;
 };
+
+function round(n) {
+  if (isNaN(n)) return "";
+  return (Math.round((n + Number.EPSILON) * 100) / 100);
+}
+
+function parse_float(val, def) {
+  let n = parseFloat(val);
+  return isNaN(n) ? def : n;
+}
 
 function Converter(where = document.body) {
   let [loading, setLoading] = reactive(false);
@@ -171,8 +191,8 @@ function Converter(where = document.body) {
 
   let [source, setSource] = reactive({
     currency: "EUR",
-    amount: 1,
-    rate: 1,
+    amount: 1.0,
+    rate: 1.0,
   });
 
   let [target, setTarget] = reactive({
@@ -201,14 +221,15 @@ function Converter(where = document.body) {
 
   let component = div(
     { class: "converter" },
-    condition(symbols, () => p({ class: "converter__equals" }, text(() => `${source().amount} ${symbols()[source().currency]} equals`)), span("Loading")),
-    condition(symbols, () => strong({ class: "converter__value" }, text(() => `${source(v => v.amount) / source(v => v.rate) * target(v => v.rate)} ${symbols()[target().currency]}`))),
+    condition(symbols, () => p({ class: "converter__equals" }, text(() => `${round(parse_float(source().amount, 0))} ${symbols()[source().currency]} equals`)), span("Loading")),
+    condition(symbols, () => strong({ class: "converter__value" }, text(() => `${round(source(v => parse_float(v.amount, 0)) / source(v => v.rate) * target(v => v.rate))} ${symbols()[target().currency]}`))),
     div(
       { class: "input-container" },
       input(
-        { type: "number", name: "base_value", class: "input", value: () => source(v => v.amount) },
+        { type: "text", inputmode: "decimal", name: "base_value", class: "input" },
+        value(() => round(source(v => v.amount))),
         listeners({
-          input: (e) => setSource((prev) => ({ ...prev, amount: e.target.valueAsNumber || 1 }))
+          input: (e) => setSource((prev) => ({ ...prev, amount: parseFloat(e.target.value) }))
         })
       ),
       span({ class: "separator" }),
@@ -222,7 +243,13 @@ function Converter(where = document.body) {
     ),
     div(
       { class: "input-container" },
-      input({ type: "number", name: "base_value", class: "input", value: () => source(v => v.amount) / source(v => v.rate) * target(v => v.rate) }),
+      input(
+        { type: "text", inputmode: "decimal", name: "base_value", class: "input" },
+        value(() => round(source(v => v.amount) / source(v => v.rate) * target(v => v.rate))),
+        listeners({
+          input: (e) => setSource((prev) => ({ ...prev, amount: parseFloat(e.target.value) * source(v => v.rate) / target(v => v.rate) }))
+        })
+      ),
       span({ class: "separator" }),
       select(
         { name: "base_symbol", class: "select" },
